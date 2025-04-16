@@ -1,4 +1,4 @@
+.gitignore
 __pycache__
 config.json
-training_log.txt
-.gitignore
+training_log.tx

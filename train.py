@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, random_split
 from model import ResNet18MusicGenre
-from AudioDataset import AudioDataset
+from AudioDatasetN import AudioDataset
 import torchaudio
 import matplotlib.pyplot as plt
 import os
@@ -20,6 +20,7 @@ torch.cuda.empty_cache()
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 audio_dir = config["audio_dir"]
+checkpoint_path = config["checkpoint_path"]
 num_classes = config["num_classes"]
 input_channels = config["input_channels"]
 log_file = config["log_file"]
@@ -36,19 +37,40 @@ n_fft = config["n_fft"]
 hop_length = config["hop_length"]
 win_length = config["win_length"]
 n_mels = config["n_mels"]  
-mel_spectrogram = torchaudio.transforms.MelSpectrogram(
-    sample_rate=sample_rate,
-    n_mels=n_mels,
-    n_fft=n_fft,
-    hop_length=hop_length,
-    win_length=win_length,
-    f_min=0,
-    f_max=10000,
-    norm=None,  
-    mel_scale="htk"
-)
+f_min = config["f_min"]
+f_max = config["f_max"]
+#mel_spectrogram = torchaudio.transforms.MelSpectrogram(
+#    sample_rate=sample_rate,
+#    n_mels=n_mels,
+#    n_fft=n_fft,
+#    hop_length=hop_length,
+#    win_length=win_length,
+#    f_min=0,
+#    f_max=10000,
+#    norm=None,  
+#    mel_scale="htk"
+#)
+#
+#ad = AudioDataset(audio_dir, mel_spectrogram, sample_rate, num_samples, device)
 
-ad = AudioDataset(audio_dir, mel_spectrogram, sample_rate, num_samples, device)
+mel_spectrogram = torchaudio.transforms.MelSpectrogram(
+        sample_rate=sample_rate,
+        n_mels=n_mels,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        win_length=win_length,
+        f_min=f_min,
+        f_max=f_max,
+    )
+amplitude_to_db = torchaudio.transforms.AmplitudeToDB(stype='power').to(device)
+    
+transformation = torch.nn.Sequential(
+        mel_spectrogram,
+        amplitude_to_db
+    )
+
+ad = AudioDataset(audio_dir, transformation, sample_rate, num_samples, device, normalize= True)
+
 
 total_size = len(ad)
 validation_size = int(total_size * validation_ratio)
@@ -57,13 +79,14 @@ training_size = total_size - validation_size - test_size
 train_dataset, val_dataset, test_dataset = random_split(
     ad, [training_size, validation_size, test_size])
 
-mean, std = compute_mean_std(train_dataset, batch_size= batch_size, shuffle= False)
+#mean, std = compute_mean_std(train_dataset, batch_size= batch_size, shuffle= False)
 
 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
 audioClassifier = ResNet18MusicGenre(num_classes=num_classes, input_channels=input_channels, drop_out_rate= drop_out_rate).to(device)
+#audioClassifier.load_state_dict(torch.load(checkpoint_path, map_location=device))
 loss_fn = nn.BCEWithLogitsLoss()
 optimizer = torch.optim.Adam(audioClassifier.parameters(), lr=lr)
 scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)
